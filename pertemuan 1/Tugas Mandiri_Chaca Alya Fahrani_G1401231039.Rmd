@@ -1,1 +1,243 @@
+---
+title: "Mpdw Tugas Mandiri_Chaca Alya_G1401231039"
+author: "Chaca Alya Fahrani"
+date: "2025-08-29"
+output: html_document
+---
 
+### **Library (Packages)**
+
+```{r}
+library("forecast")
+library("graphics")
+library("TTR")
+library("TSA")
+```
+
+### **Import Data**
+
+```{r}
+library(readxl)
+data_sales <- read_xlsx("C:/Users/chaca/OneDrive/SEMESTER 5/MPDW/data latihan mpdw (store sales)_Chaca Alya.xlsx")
+data_sales
+```
+
+### **Mengambil Data (dari baris 101-200)**
+
+```{r}
+Data_sales_baru <- data_sales[101:200,]
+Data_sales_baru
+```
+
+### **Eksplorasi Data**
+
+```{r}
+View(Data_sales_baru)
+str(Data_sales_baru)
+dim(Data_sales_baru)
+```
+
+### **Mengubah data agar terbaca sebagai data deret waktu**
+
+```{r}
+data_sales.ts <- ts(Data_sales_baru$Total_Sales)
+```
+
+### **Menampilkan ringkasan**
+
+```{r}
+summary(data_sales.ts)
+```
+
+### **Membuat plot data deret waktu**
+
+```{r}
+ts.plot(data_sales.ts, xlab="Time Period ", ylab="Total Sales", 
+        main = "Time Series Plot")
+points(data_sales.ts)
+```
+
+Plot data secara penglihatan menunjukkan bahwa total penjualan bergerak naik-turun di kisaran yang relatif stabil, tanpa tren naik atau turun yang jelas. Pola ini menunjukkan fluktuasi harian yang kecil dan cenderung konsisten, sehingga metode peramalan, seperti Single Moving Average (SMA) sepertinya cocok digunakan. Akan tetapi, metode Double Moving Average (DMA) juga akan dicoba untuk mengevaluasi kecocokannya dengan pola data tersebut.
+
+## **Single Moving Average (SMA)**
+
+### **Pembagian Data (Training dan Testing)**
+
+Pembagian data latih dan data uji dilakukan dengan perbandingan 80% data latih dan 20% data uji.
+
+```{r}
+
+training_ma <-Data_sales_baru[1:80,]
+testing_ma <-Data_sales_baru[81:100,]
+
+
+train_ma.ts <- ts(training_ma$Total_Sales)
+test_ma.ts <- ts(testing_ma$Total_Sales)
+```
+
+### **Eksplorasi Data**
+
+```{r}
+#eksplorasi keseluruhan data
+plot(data_sales.ts, col="red",main="Plot semua data")
+points(data_sales.ts)
+
+#eksplorasi data latih
+plot(train_ma.ts, col="blue",main="Plot data latih")
+points(train_ma.ts)
+
+#eksplorasi data uji
+plot(test_ma.ts, col="blue",main="Plot data uji")
+points(test_ma.ts)
+```
+
+```{r}
+#Eksplorasi dengan GGPLOT
+library(ggplot2)
+ggplot() + 
+  geom_line(data = training_ma, aes(x = Date, y = Total_Sales, col = "Data Latih")) +
+  geom_line(data = testing_ma, aes(x = Date, y = Total_Sales, col = "Data Uji")) +
+  labs(x = "Periode Waktu", y = "Total Sales", color = "Legend") +
+  scale_colour_manual(name="Keterangan:", breaks = c("Data Latih", "Data Uji"),
+                      values = c("blue", "red")) + 
+  theme_bw() + theme(legend.position = "bottom",
+                     plot.caption = element_text(hjust=0.5, size=12))
+```
+
+### **Single Moving Average (SMA)**
+
+```{r}
+sales.sma<-SMA(train_ma.ts, n=7) #karakter pemulusan pakai 7 untuk menangkap pola mingguan
+sales.sma
+```
+
+### **Hasil peramalan 1 periode ke depan**
+
+```{r}
+data.ramal<-c(NA,sales.sma)
+data.ramal #forecast 1 periode ke depan
+```
+
+Berdasarkan hasil forecast 1 periode ke depan didapatkan nilai total penjualan sebesar 227.8029
+
+Selanjutnya akan dilakukan peramalan sejumlah data uji, yaitu 20 periode. Pada metode SMA, hasil peramalan 20 periode ke depan akan bernilai sama dengan hasil peramalan 1 periode ke depan. Dalam hal ini akan dilakukan penggabungan data aktual train, data hasil pemulusan dan data hasil ramalan 20 periode kedepan.
+
+```{r}
+data.gab<-cbind(aktual=c(train_ma.ts,rep(NA,20)),pemulusan=c(sales.sma,rep(NA,20)),ramalan=c(data.ramal,rep(data.ramal[length(data.ramal)],19)))
+data.gab #forecast 20 periode ke depan
+```
+
+Adapun plot data deret waktu dari hasil peramalan yang dilakukan adalah sebagai berikut:
+
+```{r}
+ts.plot(data_sales.ts, xlab="Time Period ", ylab="Total Sales", main= "SMA N=7 Data Total Sales")
+points(data_sales.ts) # titik data asli
+lines(data.gab[,2],col="green",lwd=2) #data gabungan pemulusan
+lines(data.gab[,3],col="red",lwd=2) #data gabungan ramalan
+legend("topleft",c("data aktual","data pemulusan","data peramalan"), lty=8, col=c("black","green","red"), cex=0.5)
+```
+
+Selanjutnya perhitungan akurasi dilakukan dengan ukuran akurasi *Sum Squares Error* (SSE), *Mean Square Error* (MSE) dan *Mean Absolute Percentage Error* (MAPE). Perhitungan akurasi dilakukan baik pada data latih maupun pada data uji.
+
+### **Menghitung nilai keakuratan data latih**
+
+```{r}
+error_train.sma = train_ma.ts-data.ramal[1:length(train_ma.ts)]
+SSE_train.sma = sum(error_train.sma[8:length(train_ma.ts)]^2)
+MSE_train.sma = mean(error_train.sma[8:length(train_ma.ts)]^2)
+MAPE_train.sma = mean(abs((error_train.sma[8:length(train_ma.ts)]/train_ma.ts[8:length(train_ma.ts)])*100))
+
+akurasi_train.sma <- matrix(c(SSE_train.sma, MSE_train.sma, MAPE_train.sma))
+row.names(akurasi_train.sma)<- c("SSE", "MSE", "MAPE")
+colnames(akurasi_train.sma) <- c("Akurasi m = 4")
+akurasi_train.sma
+```
+
+Model peramalan dengan m = 7 cukup akurat dan dapat digunakan untuk prediksi. Dalam hal ini nilai MAPE data latih pada metode pemulusan SMA kurang dari 10% (7,81%), nilai ini dapat dikategorikan sebagai nilai akurasi yang sangat baik. Selanjutnya dilakukan perhitungan nilai MAPE data uji pada metode pemulusan SMA.
+
+### **Menghitung nilai keakuratan data uji**
+
+```{r}
+error_test.sma = test_ma.ts-data.gab[81:100,3]
+SSE_test.sma = sum(error_test.sma^2)
+MSE_test.sma = mean(error_test.sma^2)
+MAPE_test.sma = mean(abs((error_test.sma/test_ma.ts*100)))
+
+akurasi_test.sma <- matrix(c(SSE_test.sma, MSE_test.sma, MAPE_test.sma))
+row.names(akurasi_test.sma)<- c("SSE", "MSE", "MAPE")
+colnames(akurasi_test.sma) <- c("Akurasi m = 7")
+akurasi_test.sma
+```
+
+Perhitungan akurasi menggunakan data uji juga menghasilkan nilai MAPE yang kurang dari 10%, yakni sebesar 6,56% sehingga nilai akurasi ini dapat dikategorikan sebagai sangat baik.
+
+**Kesimpulan :** Metode Single Moving Average (SMA) dapat dikatakan sangat baik digunakan pada data tersebut, karena baik di data latih maupun data uji sama-sama menghasilkan tingkat kesalahan prediksi yang rendah (MAPE \< 10%).
+
+## **Double Moving Average (DMA)**
+
+```{r}
+dma <- SMA(sales.sma, n = 7)
+At <- 2*sales.sma - dma
+Bt <- 2/(7-1)*(sales.sma - dma)
+data.dma<- At+Bt
+
+t = 1:20
+f = c()
+
+for (i in t) {
+  f[i] = At[length(At)] + Bt[length(Bt)]*(i)
+}
+
+data.gab2 <- cbind(aktual = c(train_ma.ts,rep(NA,20)), pemulusan1 = c(sales.sma,rep(NA,20)),pemulusan2 = c(data.dma, rep(NA,20)),At = c(At, rep(NA,20)), Bt = c(Bt,rep(NA,20)),ramalan = c(data.ramal2, f[-1]))
+data.gab2
+
+```
+
+Hasil pemulusan menggunakan metode DMA divisualisasikan sebagai berikut:
+
+```{r}
+ts.plot(data_sales.ts, xlab="Time Period ", ylab="Total Sales", main= "DMA N=7 Data Sales")
+points(data_sales.ts)
+lines(data.gab2[,3],col="green",lwd=2)
+lines(data.gab2[,6],col="red",lwd=2)
+legend("topleft",c("data aktual","data pemulusan","data peramalan"), lty=8, col=c("black","green","red"), cex=0.8)
+
+```
+
+Selanjutnya perhitungan akurasi dilakukan baik pada data latih maupun data uji. Perhitungan akurasi dilakukan dengan ukuran akurasi SSE, MSE dan MAPE.
+
+### **Menghitung nilai keakuratan data latih**
+
+```{r}
+error_train.dma = train_ma.ts-data.ramal2[1:length(train_ma.ts)]
+SSE_train.dma = sum(error_train.dma[14:length(train_ma.ts)]^2)
+MSE_train.dma = mean(error_train.dma[14:length(train_ma.ts)]^2)
+MAPE_train.dma = mean(abs((error_train.dma[14:length(train_ma.ts)]/train_ma.ts[14:length(train_ma.ts)])*100))
+
+akurasi_train.dma <- matrix(c(SSE_train.dma, MSE_train.dma, MAPE_train.dma))
+row.names(akurasi_train.dma)<- c("SSE", "MSE", "MAPE")
+colnames(akurasi_train.dma) <- c("Akurasi m = 7")
+akurasi_train.dma
+```
+
+Model peramalan dengan m = 7 cukup akurat dan dapat digunakan untuk prediksi. Dalam hal ini nilai MAPE data latih pada metode pemulusan DMA kurang dari 10%, yakni 8,48%. Nilai ini dapat dikategorikan sebagai nilai akurasi yang sangat baik. Selanjutnya dilakukan perhitungan nilai MAPE data uji pada metode pemulusan SMA.
+
+### **Menghitung nilai keakuratan data uji**
+
+```{r}
+error_test.dma = test_ma.ts-data.gab2[81:100,6]
+SSE_test.dma = sum(error_test.dma^2)
+MSE_test.dma = mean(error_test.dma^2)
+MAPE_test.dma = mean(abs((error_test.dma/test_ma.ts*100)))
+
+akurasi_test.dma <- matrix(c(SSE_test.dma, MSE_test.dma, MAPE_test.dma))
+row.names(akurasi_test.dma)<- c("SSE", "MSE", "MAPE")
+colnames(akurasi_test.dma) <- c("Akurasi m = 7")
+akurasi_test.dma
+```
+
+Perhitungan akurasi menggunakan data uji juga menghasilkan nilai MAPE yang kurang dari 10%, yakni sebesar 8,48% sehingga nilai akurasi ini dapat dikategorikan sebagai sangat baik.
+
+**Kesimpulan :** Jika menggunakan DMA, hasil akurasi dengan periode 7 menunjukkan bahwa model mampu memprediksi total penjualan dengan baik. Nilai MAPE yang kurang 10% antara data latih dan data uji menandakan model stabil dan tidak mengalami overfitting. Dengan demikian, DMA juga dapat digunakan sebagai metode peramalan yang efektif untuk data penjualan ini.
+
+**Kesimpulan Keseluruhan :** Berdasarkan hasil akurasi, baik pada data latih maupun data uji, metode Single Moving Average (SMA) menunjukkan performa yang lebih baik dibandingkan Double Moving Average (DMA) pada data total penjualan ini. Hal ini ditunjukkan oleh nilai MAPE yang lebih kecil pada SMA untuk keduanya.
