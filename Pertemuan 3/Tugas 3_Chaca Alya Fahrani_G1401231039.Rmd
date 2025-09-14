@@ -1,1 +1,304 @@
+---
+title: "Tugas 3 MPDW_Chaca Alya Fahrani_G1401231039"
+author: "Chaca Alya Fahrani"
+date: "2025-09-09"
+output: html_document
+---
 
+## **Packages**
+
+```{r}
+library(dLagM)
+library(dynlm)
+library(MLmetrics)
+library(lmtest)
+library(car)
+```
+
+## **Impor Data**
+
+```{r}
+library(rio)
+data_AQI <- import("https://raw.githubusercontent.com/Chacaalya/mpdw/main/Pertemuan%203/NewDelhi_Air_quality.csv")
+data_AQI
+```
+
+## Membuat *Scatter Plot* untuk Memilih Peubah X
+
+Berikutnya akan dilakukan plot antara peubah X dan Y, sehingga dapat dilihat secara visual apakah hubungannya linier atau tidak.
+
+```{r}
+# CO dan AQI
+ggplot(data_AQI, aes(x = CO, y = AQI)) +
+  geom_point(alpha = 0.5, color = "orange") +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  theme_minimal()
+
+#SO2 dan AQI
+ggplot(data_AQI, aes(x = so2, y = AQI)) +
+  geom_point(alpha = 0.5, color = "green") +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  theme_minimal()
+
+# O3 dan AQI
+ggplot(data_AQI, aes(x = o3, y = AQI)) +
+  geom_point(alpha = 0.5, color = "red") +
+  geom_smooth(method = "lm", se = FALSE, color = "black") +
+  theme_minimal()
+
+# NO2 dan AQI
+ggplot(data_AQI, aes(x = no2, y = AQI)) +
+  geom_point(alpha = 0.5, color = "darkblue") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  theme_minimal()
+
+```
+
+Dari beberapa peubah yang memengaruhi AQI, saya memilih peubah O3. Hal ini dikarenakan berdasarkan eksplorasi yang sudah dilakukan menggunakan scatter plot antara peubah AQI dan O3 memiliki hubungan yang linier.(Disini saya memilih peubah Xnya berdasarkan eksplorasi saja bukan dari jurnal)
+
+## **Membuat Data Frame yang berisi peubah Yt, Xt, dan Y(t-1)**
+
+```{r}
+data <- data.frame(
+  t  = data_AQI$datetime,     # urutan waktu
+  Yt = data_AQI$AQI,          # peubah respon (AQ1)
+  Xt = data_AQI$o3)          # peubah penjelas (o3)
+
+# buat lag Yt
+data$`Y(t-1)` <- dplyr::lag(data$Yt, 1)
+
+# lihat hasil
+data
+
+```
+
+## **Pembagian Data**
+
+Pembagian data dilakukan dengan proporsi 80% train dan 20% test, karena proporsi ini memberikan keseimbangan antara ketersediaan data yang cukup untuk melatih model serta data yang memadai untuk menguji akurasi model.
+
+```{r}
+#SPLIT DATA
+train<-data[1:57,] # 80% dari jumlah data awal
+test<-data[58:72,] # 20% dari jumlah data awal
+```
+
+```{r}
+#data time series
+train.ts<-ts(train)
+test.ts<-ts(test)
+data.ts<-ts(data)
+```
+
+## **Model *Koyck***
+
+```{r}
+model.koyck <- koyckDlm(x = train$Xt, y = train$Yt)
+summary(model.koyck)
+AIC(model.koyck)
+BIC(model.koyck)
+```
+
+**Interpretasi Hasil:**
+
+-   Dari `summary`, kita dapatkan model: $$\hat{Y_t}=0.547 +0.419X_t+0.258Y_{t-1} $$
+
+-   koefisien $X_t$ (0.419) signifikan, artinya nilai $X$ saat ini berpengaruh terhadap $Y$.
+
+-   Koefisien $Y_{t−1}$ (0.258) signifikan. Ini adalah **estimasi untuk** $\lambda$. Nilai ini menunjukkan bahwa sekitar 25% dari efek di periode sebelumnya masih "terbawa" ke periode saat ini.
+
+### **Peramalan dan Akurasi**
+
+Berikut adalah hasil peramalan y untuk 15 periode kedepan menggunakan model koyck. Pemilihan 15 periode ini didasarkan pada jumlah data test yang sebelumnya telah ditentukan.
+
+```{r}
+fore.koyck <- forecast(model = model.koyck, x=test$Xt, h=15)
+fore.koyck
+mape.koyck <- MAPE(fore.koyck$forecasts, test$Yt)
+mape.koyck #data test
+#akurasi data training
+GoF(model.koyck)
+```
+
+Berdasarkan hasil akurasi, di dapatkan nilai MAPE pada data test sebesar 3,1% dan MAPE pada data training sebesar 1,4%. Kedua nilai MAPE masih di bawah batas 20% dan gap antara MAPE training & test tidak terlalu jauh, sehingga tidak mengindikasikan adanya overfitting pada model ini. Sehingga model ini termasuk pada model yang sangat bagus.
+
+## **Regression with Distributed Lag**
+
+### ***Lag*** **Optimum**
+
+Mencari panjang lag yang paling optimal berdasarkan kriteria informasi seperti **AIC (Akaike Information Criterion)**. AIC menyeimbangkan antara kecocokan model dengan kompleksitasnya.
+
+Penentuan Lag optimum dibatasi pada q=10 karena penggunaan lag yang terlalu panjang berisiko menyebabkan overfitting.
+
+```{r}
+#penentuan lag optimum 
+finiteDLMauto(formula = Yt ~ Xt,
+              data = data.frame(train), q.min = 1, q.max = 10,
+              model.type = "dlm", error.type = "AIC", trace = TRUE)
+```
+
+Berdasarkan output tersebut, lag optimum didapatkan ketika lag =10, karena memiliki nilai AIC terkecil. Selanjutnya dilakukan pemodelan untuk lag=10.
+
+```{r}
+#model dlm dengan lag optimum
+model.dlm <- dlm(x = train$Xt,y = train$Yt , q = 10)
+summary(model.dlm)
+AIC(model.dlm)
+BIC(model.dlm)
+```
+
+Dari hasil tersebut terdapat satu peubah yang berpengaruh signifikan terhadap taraf nyata 5% yaitu $x_t$, $x_{t-7}$, $x_{t-8}$, $x_{t-9}$, $x_{t-10}$. Adapun keseluruhan model yang terbentuk adalah
+
+$$
+\hat{Y_t}=-0.294 +0.405X_t+0.159X_{t-1}...-0.098X_{t-10}
+$$
+
+Adapun hasil peramalan 15 periode kedepan menggunakan model tersebut adalah sebagai berikut
+
+### **Peramalan dan akurasi**
+
+```{r}
+fore.dlm <- forecast(model = model.dlm, x=test$Xt, h=15)
+
+#akurasi data test
+mape.dlm<- MAPE(fore.dlm2$forecasts, test$Yt)
+mape.dlm
+
+#akurasi data training
+GoF(model.dlm)
+```
+
+Berdasarkan hasil akurasi, di dapatkan nilai MAPE pada data test sebesar 1,2% dan MAPE pada data training sebesar 0,7%. Kedua nilai MAPE masih berada di bawah 10% dan gap antara MAPE training & test tidak terlalu jauh, sehingga tidak mengindikasikan adanya overfitting pada model ini. Sehingga model ini juga termasuk pada model yang sangat bagus.
+
+## **Model Autoregressive**
+
+### ***Lag*** **Optimum**
+
+```{r}
+#penentuan lag optimum
+model.ardl.opt <- ardlBoundOrders(data = data.frame(data), ic = "AIC", 
+                                  formula = Yt ~ Xt )
+model.ardl.opt
+min_p=c()
+for(i in 1:6){
+  min_p[i]=min(model.ardl.opt$Stat.table[[i]])
+}
+q_opt=which(min_p==min(min_p, na.rm = TRUE))
+p_opt=which(model.ardl.opt$Stat.table[[q_opt]] == 
+              min(model.ardl.opt$Stat.table[[q_opt]], na.rm = TRUE))
+data.frame("q_optimum" = q_opt, "p_optimum" = p_opt, 
+           "AIC"=model.ardl.opt$min.Stat)
+```
+
+Dari tabel di atas, dapat terlihat bahwa nilai AIC terendah didapat ketika $p=13$ dan $q=2$, yaitu sebesar `16.550`. Artinya, model autoregressive optimum didapat ketika $p=13$ dan $q=2$.
+
+```{r}
+model.ardl <- ardlDlm(formula = Yt ~ Xt, 
+                         data = train,p = 13, q = 2)
+summary(model.ardl)
+AIC(model.ardl)
+BIC(model.ardl)
+```
+
+Hasil uji t di atas menunjukkan bahwa nilai-p pada $xt_{t}$,$x_{t-8}$\<0.05 Hal ini menunjukkan bahwa peubah $x_{t-8}$, berpengaruh signifikan terhadap $y_t$ pada taraf 5%. Model keseluruhannya adalah sebagai berikut:
+
+$$
+\hat{Y}=-0.771+0.394X_t+0.207 X_{t-1}+...-0.066 Y_{t-2}
+$$\
+
+### **Peramalan dan Akurasi**
+
+```{r}
+fore.ardl <- forecast(model = model.ardl, x=test$Xt, h=15)
+fore.ardl
+mape.ardl <- MAPE(fore.ardl$forecasts, test$Yt)
+mape.ardl
+#akurasi data training
+GoF(model.ardl)
+```
+
+Data di atas merupakan hasil peramalan untuk 15 periode ke depan menggunakan Model Autoregressive dengan $p=13$ dan $q=2$.
+
+Berdasarkan akurasi di atas, terlihat bahwa nilai MAPE keduanya masih berada di bawah 10% dan nilai MAPE keduanya tidak jauh berbeda. Artinya, model regresi dengan distribusi lag ini ($p=13$ dan $q=2$) tidak terindikasi `overfitted`. Sehingga model ini juga termasuk pada model yang sangat bagus.
+
+## **Pemodelan DLM & ARDL dengan Library `dynlm`**
+
+Akan dilakukan pemodelan DLM dan ARDL sebelumnyadengan library dynlm, kemudian ditambah dengan dua kondisi lainnya untuk dlm ketika q=7 dan ARDL saat p=1 dan q=1
+
+```{r}
+library(dynlm)
+
+# sama seperti model sebelumnya DLM q=10 (optimum)
+cons_lm1 <- dynlm(Yt ~ Xt + L(Xt, 1:10), data = train.ts)
+summary(cons_lm1)
+
+#menggunakan model ARDL p=13 dan q=2
+cons_lm2 <- dynlm(Yt ~ Xt + L(Xt,1:13) + L(Yt,1:2), data = train.ts)
+summary(cons_lm2)
+```
+
+## **SSE**
+
+```{r}
+deviance(cons_lm1)
+deviance(cons_lm2)
+```
+
+## **Uji Diagnostik**
+
+### **Autokorelasi**
+
+```{r}
+#durbin watson
+dwtest(cons_lm1)
+dwtest(cons_lm2)
+```
+
+### **Heterogenitas**
+
+```{r}
+bptest(cons_lm1)
+bptest(cons_lm2)
+```
+
+### **Kenormalan**
+
+```{r}
+shapiro.test(cons_lm1$residuals)
+shapiro.test(cons_lm2$residuals)
+```
+
+### **Ragam sisaan =0**
+
+```{r}
+t.test(cons_lm1$residuals,mu = 0,conf.level = 0.95)
+t.test(cons_lm2$residuals,mu = 0,conf.level = 0.95)
+```
+
+**Kesimpulan**: Berdasarkan hasil tersebut, model DLM dan ARDL optimum memenuhi semua asumsi (baik asumsi normalitas, harapan sisaan sama dengan 0, tak terjadi heteroskedastisitas dan tidak ada autokorelasi).
+
+## **Perbandingan Model**
+
+```{r}
+akurasi <- matrix(c(mape.koyck, mape.dlm, mape.ardl))
+row.names(akurasi)<- c("Koyck","DLM","Autoregressive")
+colnames(akurasi) <- c("MAPE")
+akurasi
+```
+
+Berdasarkan nilai MAPE, model paling optimum didapat pada Model DLM karena memiliki nilai MAPE yang terkecil dan tidak begitu jauh dengan model autoregressive.
+
+## **Plot**
+
+```{r}
+par(mfrow=c(1,1))
+plot(test$Xt, test$Yt, type="b", col="black", ylim=c(15,40))
+points(test$Xt, fore.koyck$forecasts,col="grey")
+lines(test$Xt, fore.koyck$forecasts,col="grey")
+points(test$Xt, fore.dlm$forecasts,col="red")
+lines(test$Xt, fore.dlm$forecasts,col="red")
+points(test$Xt, fore.ardl$forecasts,col="yellow")
+lines(test$Xt, fore.ardl$forecasts,col="yellow")
+legend("topleft",c("aktual", "koyck","DLM ","autoregressive" ), lty=1, col=c("black","grey","red","yellow"), cex=0.8)
+```
+
+Berdasarkan plot tersebut, terlihat bahwa plot yang paling mendekati data aktualnya adalah model DLM walaupun memang terlihat hampir sama dengan model Autoregressive, sehingga dapat disimpulkan model yang lebih baik dalam hal ini adalah model DLM.
