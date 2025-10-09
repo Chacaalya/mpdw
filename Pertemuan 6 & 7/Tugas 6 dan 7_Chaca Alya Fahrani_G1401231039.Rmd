@@ -1,1 +1,370 @@
+---
+title: "G1401231039_Chaca Alya Fahrani_Tugas 6 dan 7 MPDW"
+author: "Chaca Alya Fahrani"
+date: "2025-10-01"
+output: html_document
+---
 
+## **Library**
+
+```{r}
+library(ggplot2)
+library(tsibble)
+library(tseries)
+library(MASS)
+library(forecast)
+library(TSA)
+library(TTR)
+library(aTSA)
+library(graphics)
+```
+
+## **Impor Data**
+
+```{r}
+library(rio)
+data_kelompok <- import("https://raw.githubusercontent.com/Chacaalya/mpdw/main/pertemuan%201/data%20latihan%20mpdw%20(store%20sales)_Chaca%20Alya.xlsx")
+data_kelompok
+```
+
+## **Mengambil Data (dari baris 101-200)**
+
+```{r}
+Data_Sales <- data_kelompok[101:200,]
+Data_Sales
+```
+
+## **Mengubah data agar terbaca sebagai data deret waktu**
+
+```{r}
+data_sales.ts <- ts(Data_Sales$Total_Sales)
+```
+
+## **Eksplorasi Data**
+
+### **Plot data deret waktu**
+
+```{r}
+plot_stas <- data_sales.ts |> as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) + geom_line() + theme_bw() +
+  xlab("Obs") + ylab("Nilai")
+plot_stas
+```
+
+Berdasarkan plot data deret waktu, terlihat bahwa data cenderung memiliki pola yang stasioner dalam rataan, ditandai dengan data yang menyebar di sekitar nilai tengahnya (225) dan stasioner dalam ragam, ditandai dengan lebar pita yang cenderung sama.
+
+## **Uji Stasioneritas Data**
+
+### **Plot ACF**
+
+```{r}
+acf(data_sales.ts)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF data ***cut off*** pada lag ke 1
+
+### **Uji ADF**
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+```{r}
+tseries::adf.test(data_sales.ts)
+```
+
+Berdasarkan uji ADF tersebut, didapat ***p-value*** sebesar **0,01** yang lebih kecil dari taraf nyata 5% sehingga **tolak** $H_0$ dan menandakan bahwa **data stasioner dalam rataan**. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series dan plot ACF.
+
+### **Plot Box-Cox**
+
+```{r}
+index <- seq(1:100) # Datanya sebanyak 100
+bc = boxcox(data_sales.ts~index, lambda = seq(-4,4,by=0.01))
+# SK
+bc$x[bc$y > max(bc$y) - 0.5 * qchisq(.95,1)]
+# Nilai Rounded Lambda
+lambda <- bc$x[which.max(bc$y)]
+lambda
+```
+
+Gambar di atas menunjukkan nilai ***rounded value*** **(**$\lambda$**)** optimum sebesar **0,16** dan pada selang kepercayaan 95% nilai memiliki batas bawah **-1.94** dan batas atas **2,23**. Selang tersebut memuat nilai satu sehingga dapat dikatakan bahwa data **stasioner dalam ragam.**
+
+**Kesimpulan :**
+
+Hasil eksplorasi dengan plot data penuh menunjukkan bahwa data total penjualan sudah stasioner, baik dalam rataan maupun dalam ragam. Tahapan selanjutnya yakni membagi data latih dan data uji dengan proporsi 78%:22%.
+
+## **Pemilihan Data Training (Latih) dan Testing (Uji)**
+
+### **Plot Data Latih**
+
+```{r}
+dt_train <- Data_Sales[1:78,] # 78 data
+dt_train.ts <- ts(dt_train$Total_Sales)
+plot.ts(dt_train.ts, lty=1, xlab="Waktu", ylab="Sales Total", main="Plot Sales Train")
+```
+
+Berdasarkan plot data deret waktu pada data latih, terlihat bahwa data cenderung memiliki pola yang stasiner (bergerak pada nilai tengah tertentu). Hal ini mengindikasikan bahwa data stasioner dalam rataan.
+
+### **Plot Data Uji**
+
+```{r}
+dt_test <- Data_Sales[79:100,]
+dt_test.ts <- ts(dt_test$Total_Sales)
+plot.ts(dt_test.ts, lty=1, xlab="Waktu", ylab="Sales Total", main="Plot Sales Train")
+```
+
+## **Uji Stasioneritas Data Latih**
+
+### **Plot ACF**
+
+```{r}
+acf(dt_train.ts)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut cenderung ***tails off*** dan membentuk gelombang sinus.
+
+### **Uji ADF**
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+```{r}
+tseries::adf.test(dt_train.ts)
+```
+
+Berdasarkan uji ADF tersebut, didapat ***p-value*** sebesar **0,01** yang lebih kecil dari taraf nyata 5% sehingga **tolak** $H_0$ dan menandakan bahwa **data latih stasioner dalam rataan**. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series dan plot ACF.
+
+### **Plot Box-Cox**
+
+```{r}
+index <- seq(1:78)
+bc = MASS::boxcox(dt_train.ts~index, lambda = seq(-4,4,by=1))
+#Nilai Rounded Lambda
+lambda <- bc$x[which.max(bc$y)]
+lambda
+#SK
+bc$x[bc$y > max(bc$y) - 0.5 * qchisq(.95,1)]
+```
+
+Plot Boxcox menunjukkan nilai ***rounded value*** **(**$\lambda$**)** optimum sebesar **-0,121** dan pada selang kepercayaan 95% nilai memiliki batas bawah **-2,464** dan batas atas **2,141**. Selang tersebut memuat nilai satu sehingga dapat dikatakan bahwa **data latih stasioner dalam ragam.**
+
+**Kesimpulan Keseluruhan:**
+
+Setelah dilakukan eksplorasi baik menggunakan data penuh maupun data latih, data total penjualan sudah stasioner, baik dalam rataan maupun dalam ragam (sudah memenuhi syarat stasioner). Sehingga di sini kami tidak melakukan penanganan terkait ketidakstasioneran data.
+
+## **Identifikasi Model**
+
+### **Plot ACF**
+
+```{r}
+acf(dt_train.ts)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut cenderung ***tails off*** dan membentuk gelombang sinus. Hal ini mengindikasikan model MA -\> **MA(0)**
+
+### **Plot PACF**
+
+```{r}
+pacf(dt_train.ts)
+```
+
+Berdasarkan plot PACF, terlihat bahwa plot PACF pada data tersebut cenderung ***tails off*** dan membentuk gelombang sinus. Hal ini mengindikasikan model AR -\> **AR(0)**
+
+Karena baik plot ACF maupun PACF membentuk ***tails off***, maka kemungkinan besar model yang terbentuk yakni **ARMA(p,q)**
+
+### **Plot EACF**
+
+```{r}
+eacf(dt_train.ts)
+```
+
+Identifikasi model menggunakan plot EACF dilakukan dengan melihat ujung segitiga pada pola segitiga nol. Dalam hal ini model tentatif yang terbentuk adalah **ARMA(1,1)**, **ARMA(2,2)**, **ARMA(3,1)**, **ARMA(4,1)**, **ARMA(4,4)**, **ARMA (5,2)** dan **ARMA (3,2)**
+
+## **Pendugaan Parameter Model Tentatif**
+
+### **ARMA(1,1)**
+
+```{r}
+model1.da=Arima(dt_train.ts, order=c(1,0,1),method="ML")
+summary(model1.da) #AIC=702.27
+lmtest::coeftest(model1.da) #tidak ada parameter signifikan
+```
+
+### **ARMA(2,2)**
+
+```{r}
+model2.da=Arima(dt_train.ts, order=c(2,0,2),method="ML")
+summary(model2.da) #AIC=680.93
+lmtest::coeftest(model2.da) #terdapat parameter tidak signifikan dan ada NAN
+```
+
+### **ARMA(3,1)**
+
+```{r}
+model3.da=Arima(dt_train.ts, order=c(3,0,1),method="ML")
+summary(model3.da) #AIC=695.68
+lmtest::coeftest(model3.da) #terdapat parameter tidak signifikan
+```
+
+### **ARMA(4,1)**
+
+```{r}
+model4.da=Arima(dt_train.ts, order=c(4,0,1),method="ML")
+summary(model4.da) #AIC=697.29
+lmtest::coeftest(model4.da) #terdapat parameter tidak signifikan
+```
+
+### **ARMA(4,4)**
+
+```{r}
+model5.da=Arima(dt_train.ts, order=c(4,0,4),method="ML")
+summary(model5.da) #AIC=683.09 
+lmtest::coeftest(model5.da) #semua parameter signifikan
+```
+
+### **ARMA(5,2)**
+
+```{r}
+model6.da=Arima(dt_train.ts, order=c(5,0,2),method="ML")
+summary(model6.da) #AIC=689.46
+lmtest::coeftest(model6.da) #terdapat parameter tidak signifikan
+```
+
+### **ARMA(3,2)**
+
+```{r}
+model7.da=Arima(dt_train.ts, order=c(3,0,2),method="ML")
+summary(model8.da) #AIC=682.86
+lmtest::coeftest(model8.da) #terdapat parameter tidak signifikan
+```
+
+Berdasarkan pendugaan parameter di atas, nilai AIC terkecil dimiliki oleh model ARMA(2,2) akan tetapi tidak seluruhnya signifikan, sehingga model yang dipilih yakni model **ARIMA(4,4)** dengan nilai **AIC (683.09)** yang **seluruhnya signifikan**.
+
+## **Analisis Sisaan**
+
+Model terbaik hasil identifikasi kemudian dicek asumsi sisaannya. Sisaan model ARMA harus memenuhi asumsi normalitas, kebebasan sisaan, dan kehomogenan ragam. Diagnostik model dilakukan secara eksplorasi dan uji formal.
+
+### **Eksplorasi Sisaan**
+
+```{r}
+#Eksplorasi 
+sisaan.da <- model5.da$residuals 
+par(mfrow=c(2,2)) 
+qqnorm(sisaan.da) 
+qqline(sisaan.da, col = "blue", lwd = 2) 
+plot(c(1:length(sisaan.da)),sisaan.da) 
+acf(sisaan.da) 
+pacf(sisaan.da) 
+par(mfrow = c(1,1))
+```
+
+Berdasarkan plot kuantil-kuantil normal, secara eksplorasi terlihat bahwa sisaan tidak menyebar normal ditandai dengan titik titik yang cenderung tidak mengikuti garis $45^{\circ}$. Kemudian dapat dilihat juga lebar pita sisaan yang cenderung tidak sama menandakan bahwa sisaan memiliki ragam yang heterogen. Plot ACF dan PACF sisaan ARMA(4,4) menunjukkan bahwa seluruh lag berada di dalam batas kepercayaan (tidak signifikan), sehingga sisaan dapat dianggap saling bebas. Kemudian kondisi ini akan diuji lebih lanjut dengan uji formal.
+
+### **Uji Formal**
+
+```{r}
+#1) Sisaan Menyebar Normal 
+ks.test(sisaan.da,"pnorm") 
+```
+
+Selain dengan eksplorasi, asumsi tersebut dapat diuji menggunakan uji formal. Pada tahapan ini uji formal yang digunakan untuk normalitas adalah uji Kolmogorov-Smirnov (KS). Hipotesis pada uji KS adalah sebagai berikut.
+
+$H_0$ : Sisaan menyebar normal
+
+$H_1$ : Sisaan tidak menyebar normal
+
+Berdasarkan uji KS tersebut, didapat ***p-value*** sebesar **0.00** yang kurang dari taraf nyata 5% sehingga **tolak** $H_0$ dan menandakan bahwa **sisaan tidak menyebar normal**. Hal ini sesuai dengan hasil eksplorasi menggunakan plot kuantil-kuantil normal.
+
+```{r}
+#2) Sisaan saling bebas/tidak ada autokorelasi 
+Box.test(sisaan.da, type = "Ljung")  
+```
+
+Selanjutnya akan dilakukan uji formal untuk kebebasan sisaan menggunakan uji Ljung-Box. Hipotesis yang digunakan adalah sebagai berikut.
+
+$H_0$ : Sisaan saling bebas
+
+$H_1$ : Sisaan tidak tidak saling bebas
+
+Berdasarkan uji Ljung-Box tersebut, didapat ***p-value*** sebesar **0.4697** yang lebih besar dari taraf nyata 5% sehingga tak tolak $H_0$ dan menandakan bahwa **sisaan saling bebas**.
+
+```{r}
+#3) Sisaan homogen 
+Box.test((sisaan.da)^2, type = "Ljung")  #
+```
+
+Hipotesis yang digunakan untuk uji kehomogenan ragam adalah sebagai berikut.
+
+$H_0$ : Ragam sisaan homogen
+
+$H_1$ : Ragam sisaan tidak homogen
+
+Berdasarkan uji Ljung-Box terhadap sisaan kuadrat tersebut, didapat ***p-value*** sebesar **0.5781** yang lebih dari taraf nyata 5% sehingga **tak tolak** $H_0$ dan menandakan bahwa **ragam sisaan homogen**.
+
+```{r}
+#4) Nilai tengah sisaan sama dengan nol 
+t.test(sisaan.da, mu = 0, conf.level = 0.95) 
+```
+
+Terakhir, dengan uji-t, akan dicek apakah nilai tengah sisaan sama dengan nol. Hipotesis yang diujikan sebagai berikut.
+
+$H_0$ : nilai tengah sisaan sama dengan 0
+
+$H_1$ : nilai tengah sisaan tidak sama dengan 0
+
+Berdasarkan uji-ttersebut, didapat ***p-value*** sebesar **0.9455** yang lebih besar dari taraf nyata 5% sehingga **tak tolak** $H_0$ dan menandakan bahwa **nilai tengah sisaan sama dengan nol**.
+
+## **Overfitting**
+
+Model hasil overfitting dilakukan dengan menambah satu orde pada komponen AR dan MA dari model ARMA(4,4), sehingga diperoleh model ARMA(5,4) dan ARMA(4,5).
+
+### **Model ARMA(5,4)**
+
+```{r}
+model8.da=Arima(dt_train.ts, order=c(5,0,4),method="ML")
+summary(model8.da) #AIC=686.44 
+lmtest::coeftest(model8.da) #terdapat parameter yang tidak signifikan
+```
+
+### **Model ARMA(4,5)**
+
+```{r}
+model9.da=Arima(dt_train.ts, order=c(4,0,5),method="ML")
+summary(model9.da) #AIC=686.39
+lmtest::coeftest(model9.da)  #terdapat parameter yang tidak signifikan dan ada NAN
+```
+
+Karena model hasil overfitting hasilnya tidak lebih baik, maka model terbaik yang dipilih adalah ARMA(4,4) dilanjutkan dengan peramalan.
+
+## **Peramalan**
+
+Peramalan dilakukan menggunakan fungsi `forecast()` . Contoh peramalan berikut ini dilakukan untuk 20 hari ke depan.
+
+```{r}
+#---FORECAST---#
+ramalan.da <- forecast::forecast(model5.da, h = 20) 
+ramalan.da
+data.ramalan.da <- ramalan.da$mean
+plot(ramalan.da)
+```
+
+Berdasarkan hasil plot ramalan di atas, dapat dilihat bahwa hasil peramalan model ARMA(4,4) menunjukkan pola yang berfluktuasi secara konstan di sekitar nilai rata-ratanya. Selanjutnya, dapat dicari nilai akurasi antara hasil ramalan dengan data uji sebagai berikut.
+
+```{r}
+hasil.forc <- data.ramalan.da
+hasil <- hasil.forc
+ts.plot(dt_train.ts,hasil)
+```
+
+## **Perbandingan Peramalan dengan Hasil Aktual**
+
+```{r}
+perbandingan.da<-matrix(data=c(head(dt_test.ts, n=20), hasil[-1]),
+                     nrow = 20, ncol = 2)
+colnames(perbandingan.da) <-c("Aktual","Hasil Forecast")
+perbandingan.da
+accuracy(ts(hasil[-1]), head(dt_test.ts, n=20))
+```
+
+**Kesimpulan** : MAPE = 8.08% artinya kesalahan peramalan rata-rata sekitar 8,08% dari nilai aktualnya. Ini tergolong cukup baik, karena MAPE di bawah 10% umumnya dianggap akurasi tinggi.
